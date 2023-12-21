@@ -9,50 +9,61 @@ use reywen::{
     },
     websocket::{data::WebSocketEvent, error::Error},
 };
-use std::{env, sync::Arc, time::Duration};
+use std::{env, time::Duration};
+
 const REPLACE: [char; 3] = ['<', '>', '@'];
 #[tokio::main]
 async fn main() {
+    println!("Starting process for AUTOGUARD");
     dotenv().ok();
 
     let token = env::var("BOT_TOKEN").unwrap();
 
     let client = {
+        println!("Third party instance detected");
         if env::var("OTHER_INSTANCE").unwrap().parse::<bool>().unwrap() {
             let mut client = Client::from_token(&token, true).unwrap();
             client.http.url = env::var("INSTANCE_API_URI").clone().unwrap();
             client.websocket.domain = env::var("INSTANCE_WS_URI").unwrap().clone();
             client
         } else {
+            println!("Official instance detected");
             Client::from_token(&token, true).unwrap()
         }
     };
-
-    let client = Arc::new(client);
+    println!("Created client successfully");
 
     loop {
-        let client = Arc::clone(&client);
-        ws_2(client).await.ok();
+        println!("Websocket process started");
+
+        let client = client.clone();
+        if let Err(error) = ws_2(client).await {
+            println!("{:?}", error);
+        };
         tokio::time::sleep(Duration::from_secs(5)).await;
+        println!("Restarting Websocket...");
     }
 }
 
-async fn ws_2(client: Arc<Client>) -> Result<(), Error> {
+async fn ws_2(client: Client) -> Result<(), Error> {
     let (mut read, _) = client.websocket.dual_async().await?;
 
     while let Some(item) = read.next().await {
+        let client = client.clone();
         if let WebSocketEvent::Message { message } = item {
-            let client = Arc::clone(&client);
             tokio::spawn(async move {
-                if let Err(error) = message_handle(client, message).await {
+                if let Err(error) = message_handle(&client, message).await {
                     println!("{:?}", error)
                 }
             });
         }
     }
+
+    // code in container somehow reaches here...
     Ok(())
 }
-async fn message_handle(client: Arc<Client>, message: Message) -> Result<(), DeltaError> {
+
+async fn message_handle(client: &Client, message: Message) -> Result<(), DeltaError> {
     let prefix = env::var("COMMAND_PREFIX").unwrap();
 
     // no current wordlist ban
@@ -63,7 +74,6 @@ async fn message_handle(client: Arc<Client>, message: Message) -> Result<(), Del
         None => return Ok(()),
         Some(a) => a,
     };
-    println!("1");
     // help
     if convec.get(1).cloned() == Some("help".to_string()) {
         client

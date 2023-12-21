@@ -1,5 +1,5 @@
 # Use the official Rust image as the base image
-FROM fedora-minimal:latest
+FROM rust:latest
 
 
 
@@ -7,11 +7,12 @@ FROM fedora-minimal:latest
 WORKDIR /app
 
 # Copy the source code and Cargo.toml to the working directory
-COPY ./target/release/autoguard .
+COPY . .
 # Copy the environment file (.env) to the working directory
 COPY .env .
 
 # Build the Rust project
+RUN cargo install  --path .
 
 
-ENTRYPOINT ["./autoguard"]
+ENTRYPOINT ["autoguard"]
