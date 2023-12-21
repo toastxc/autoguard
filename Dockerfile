@@ -1,5 +1,5 @@
 # Use the official Rust image as the base image
-FROM fedora-minimal:latest
+FROM registry.fedoraproject.org/fedora-minimal:latest
 
 
 
