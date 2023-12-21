@@ -1,14 +1,16 @@
 use dotenv::dotenv;
 use futures_util::StreamExt;
-use reywen::client::Client;
-use reywen::structures::channels::message::{DataBulkDelete, DataMessageSend, Message};
-use reywen::structures::channels::Channel;
-use reywen::websocket::data::WebSocketEvent;
-use reywen::websocket::error::Error;
-use std::env;
-use std::sync::Arc;
-use std::time::Duration;
-
+use reywen::{
+    client::Client,
+    reywen_http::results::DeltaError,
+    structures::channels::{
+        message::{DataBulkDelete, DataMessageSend, Message},
+        Channel,
+    },
+    websocket::{data::WebSocketEvent, error::Error},
+};
+use std::{env, sync::Arc, time::Duration};
+const REPLACE: [char; 3] = ['<', '>', '@'];
 #[tokio::main]
 async fn main() {
     dotenv().ok();
@@ -36,29 +38,29 @@ async fn main() {
 }
 
 async fn ws_2(client: Arc<Client>) -> Result<(), Error> {
-    let (read, _) = client.websocket.dual_async().await.unwrap();
-
-    let mut read = read;
+    let (mut read, _) = client.websocket.dual_async().await?;
 
     while let Some(item) = read.next().await {
         if let WebSocketEvent::Message { message } = item {
             let client = Arc::clone(&client);
-            tokio::spawn(async move { message_handle(client, message).await });
+            tokio::spawn(async move {
+                if let Err(error) = message_handle(client, message).await {
+                    println!("{:?}", error)
+                }
+            });
         }
     }
     Ok(())
 }
-async fn message_handle(client: Arc<Client>, message: Message) {
-    println!("1");
+async fn message_handle(client: Arc<Client>, message: Message) -> Result<(), DeltaError> {
     let prefix = env::var("COMMAND_PREFIX").unwrap();
-    println!("1");
 
     // no current wordlist ban
 
     // from here on out, this is command handling
 
     let convec = match message.content_contains(&prefix, " ") {
-        None => return,
+        None => return Ok(()),
         Some(a) => a,
     };
     println!("1");
@@ -72,54 +74,51 @@ async fn message_handle(client: Arc<Client>, message: Message) {
                     prefix
                 )),
             )
-            .await
-            .unwrap();
+            .await?;
     }
     // earlyreturn: too short
     if convec.len() < 2 {
-        return;
+        return Ok(());
     };
 
     // find user
     let (id, reason) = find_id(&message, &convec).await;
 
-    let server_id = match client.channel_fetch(&message.channel).await.unwrap() {
+    let server_id = match client.channel_fetch(&message.channel).await? {
         Channel::TextChannel { server, .. } => server,
         _ => {
             panic!("not server")
         }
     };
 
-    let user = client
-        .member_fetch(&server_id, message.author)
-        .await
-        .unwrap();
+    let user = client.member_fetch(&server_id, message.author).await?;
 
     if !user.roles.contains(&env::var("ADMIN_ROLE").unwrap()) {
-        return;
+        return Ok(());
     };
 
     // differ commands
     match (convec.get(1).unwrap().as_str(), id) {
         ("ban", Stuff::One(id)) => {
-            client.ban_create(&server_id, id, reason).await;
+            client.ban_create(&server_id, id, reason).await?;
         }
         ("kick", Stuff::One(id)) => {
-            client.member_kick(&server_id, &id).await;
+            client.member_kick(&server_id, &id).await?;
         }
         ("unban", Stuff::One(id)) => {
-            client.ban_remove(&server_id, &id).await;
+            client.ban_remove(&server_id, &id).await?;
         }
         ("delete", Stuff::One(id)) => {
-            client.message_delete(&message.channel, &id).await;
+            client.message_delete(&message.channel, &id).await?;
         }
         ("delete", Stuff::Many(id)) => {
             client
                 .message_bulk_delete(message.channel, &DataBulkDelete::new().set_messages(id))
-                .await;
+                .await?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 async fn find_id(message: &Message, convec: &[String]) -> (Stuff<String>, Option<String>) {
@@ -144,14 +143,14 @@ async fn find_id(message: &Message, convec: &[String]) -> (Stuff<String>, Option
             // username / id
 
             (
-                Stuff::One(convec.get(3).unwrap().replace(['<', '>', '@'], "")),
+                Stuff::One(convec.get(3).unwrap().replace(REPLACE, "")),
                 None,
             )
         }
 
         (None, 4) => (
             // username / id | with reason
-            Stuff::One(convec.get(3).unwrap().replace(['<', '>', '@'], "")),
+            Stuff::One(convec.get(3).unwrap().replace(REPLACE, "")),
             Some(convec.get(3).unwrap().clone()),
         ),
         (None, _) => (Stuff::None, None),
