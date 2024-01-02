@@ -1,15 +1,18 @@
+mod mention;
+mod on_message;
+mod ticket;
+
 use dotenv::dotenv;
 use futures_util::StreamExt;
-use reywen::structures::channels::message::DataEditMessage;
+
+use crate::on_message::embed_error;
 use reywen::{
     client::Client,
     reywen_http::results::DeltaError,
-    structures::channels::{
-        message::{DataBulkDelete, DataMessageSend, Message},
-        Channel,
-    },
+    structures::{channels::message::Message, server::Role},
     websocket::{data::WebSocketEvent, error::Error},
 };
+use std::collections::HashMap;
 use std::{env, time::Duration};
 
 const REPLACE: [char; 3] = ['<', '>', '@'];
@@ -19,20 +22,27 @@ async fn main() {
     dotenv().ok();
 
     let token = env::var("BOT_TOKEN").unwrap();
+    let id = env::var("BOT_ID").unwrap();
 
     let client = {
-        println!("Third party instance detected");
-        if env::var("OTHER_INSTANCE").unwrap().parse::<bool>().unwrap() {
-            let mut client = Client::from_token(&token, true).unwrap();
+        if env::var("OTHER_INSTANCE")
+            .unwrap_or_default()
+            .parse::<bool>()
+            .unwrap_or_default()
+        {
+            println!("Third party instance detected");
+            let mut client = Client::from_token(&token, id, true).unwrap();
             client.http.url = env::var("INSTANCE_API_URI").clone().unwrap();
             client.websocket.domain = env::var("INSTANCE_WS_URI").unwrap().clone();
             client
         } else {
             println!("Official instance detected");
-            Client::from_token(&token, true).unwrap()
+            Client::from_token(&token, id, true).unwrap()
         }
     };
     println!("Created client successfully");
+
+    println!("{:?}", client);
 
     loop {
         println!("Websocket process started");
@@ -53,8 +63,19 @@ async fn ws_2(client: Client) -> Result<(), Error> {
         let client = client.clone();
         if let WebSocketEvent::Message { message } = item {
             tokio::spawn(async move {
-                if let Err(error) = message_handle(&client, message).await {
-                    println!("{:?}", error)
+                if let Err(error) = on_message::message_handle(&client, message.clone()).await {
+                    println!("{:?}", error);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    client
+                        .message_send(
+                            &message.channel,
+                            &embed_error(
+                                format!("{:?}", error),
+                                Some("An error has occured, the bot could not finish its tasks"),
+                            ),
+                        )
+                        .await
+                        .unwrap();
                 }
             });
         }
@@ -63,148 +84,18 @@ async fn ws_2(client: Client) -> Result<(), Error> {
     Ok(())
 }
 
-async fn message_handle(client: &Client, message: Message) -> Result<(), DeltaError> {
-    let prefix = env::var("COMMAND_PREFIX").unwrap();
-
-    // no current wordlist ban
-
-    // from here on out, this is command handling
-
-    let convec = match message.content_contains(&prefix, " ") {
-        None => return Ok(()),
-        Some(a) => a,
-    };
-    // help
-    if convec.get(1).cloned() == Some("help".to_string()) {
-        client
-            .message_send(
-                &message.channel,
-                &DataMessageSend::new().set_content(&format!(
-                    "<prefix> <action> <item>\nprefix is set to {}",
-                    prefix
-                )),
-            )
-            .await?;
-    }
-    // earlyreturn: too short
-    if convec.len() < 2 {
-        return Ok(());
-    };
-
-    // find user
-    let (id, reason) = find_id(&message, &convec).await;
-
-    let server_id = match client.channel_fetch(&message.channel).await? {
-        Channel::TextChannel { server, .. } => server,
-        _ => {
-            panic!("not server")
-        }
-    };
-
-    let user = client.member_fetch(&server_id, message.author).await?;
-
-    // beyond this point commands are privileged
-    if !user.roles.contains(&env::var("ADMIN_ROLE").unwrap()) {
-        return Ok(());
-    };
-
-    // mention everyone
-    // each ping is 30 chars
-
-    if let Some("mention") = convec.get(1).map(|a| a.as_str()) {
-        if convec.get(2).map(|a| a.as_str()) != Some("everyone") {
-            return Ok(());
-        };
-        // buffers - max 2000 char
-        let mut buffer = Vec::new();
-
-        let users = client.member_fetch_all(&server_id).await?;
-
-        for user in users.users {
-            buffer.push(format!("\n<@{}>", user.id));
-        }
-
-        if buffer.len() < 66 {
-            let content: String = buffer.into_iter().map(|a| a).collect();
-            let id = client
-                .message_send(
-                    &message.channel,
-                    &DataMessageSend::new().set_content(content),
-                )
-                .await?;
-            client
-                .message_edit(
-                    &message.channel,
-                    id.id,
-                    &DataEditMessage::new().set_content("@everyone"),
-                )
-                .await?;
-        } else {
-            let mut buffer2: Vec<String> = Vec::new();
-            buffer2.push(String::new());
-            let mut iterator = 0;
-            let mut current_count = 0;
-
-            for item in buffer.clone() {
-                if current_count == 66 {
-                    buffer2.push(String::new());
-                    iterator += 1;
-                    current_count = 0;
-                };
-
-                current_count += 1;
-                buffer2[iterator] += &item
-            }
-
-            let mut id = Vec::new();
-            for item in &buffer2 {
-                client
-                    .message_send(&message.channel, &DataMessageSend::new().set_content(item))
-                    .await
-                    .map(|a| id.push(a.id));
-            }
-
-            client
-                .message_bulk_delete(&message.channel, &DataBulkDelete { ids: id })
-                .await;
-
-            client
-                .message_send(
-                    &message.channel,
-                    &DataMessageSend::new().set_content("@everyone"),
-                )
-                .await;
-
-            println!(
-                "number of messages: {}\ntotal chars: {}",
-                buffer2.len(),
-                buffer.into_iter().collect::<String>().len()
-            );
-        }
-    }
-
-    // differ commands
-    match (convec.get(1).unwrap().as_str(), id) {
-        ("ban", Stuff::One(id)) => {
-            client.ban_create(&server_id, id, reason).await?;
-        }
-        ("kick", Stuff::One(id)) => {
-            client.member_kick(&server_id, &id).await?;
-        }
-        ("unban", Stuff::One(id)) => {
-            client.ban_remove(&server_id, &id).await?;
-        }
-        ("delete", Stuff::One(id)) => {
-            client.message_delete(&message.channel, &id).await?;
-        }
-        ("delete", Stuff::Many(id)) => {
-            client
-                .message_bulk_delete(&message.channel, &DataBulkDelete::new().set_messages(id))
-                .await?;
-        }
-        _ => {}
-    }
-    Ok(())
+pub async fn roles_get(
+    member_roles: &[String],
+    client: &Client,
+    server_id: &String,
+) -> Result<HashMap<String, Role>, DeltaError> {
+    Ok(client
+        .server_fetch(server_id)
+        .await?
+        .roles
+        .into_iter()
+        .filter(|a| member_roles.contains(&a.0))
+        .collect())
 }
 
 async fn find_id(message: &Message, convec: &[String]) -> (Stuff<String>, Option<String>) {
