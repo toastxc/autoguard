@@ -163,6 +163,33 @@ pub async fn process(
                 )
                 .await?;
 
+            println!("allow admin");
+
+            let role_name = env::var("ADMIN_ROLE_NAME").unwrap();
+
+            let mut admin_role_id = String::new();
+            client.server_fetch(server_id).await?.roles.iter().for_each(|(id, name)| if name.name == role_name {
+
+
+                admin_role_id = id.clone();
+            });
+
+
+            if !admin_role_id.is_empty() {
+                client
+                    .channel_permissions_set(
+                        &ticket_channel.id(),
+                        &admin_role_id,
+                        &Permissions::new()
+                            .add_allow(Permission::ViewChannel)
+                            .add_allow(Permission::SendMessage)
+                            .add_allow(Permission::ReadMessageHistory)
+                            .add_allow(Permission::ManageMessages),
+                    )
+                    .await?;
+            }
+
+
             println!("edit message");
             client
                 .message_send(
@@ -179,7 +206,7 @@ pub async fn process(
                     ticket_channel.id(),
                     &Permissions::new()
                         .add_deny(Permission::SendMessage)
-                        .add_allow(Permission::ViewChannel),
+                        .add_deny(Permission::ViewChannel),
                 )
                 .await?;
 
