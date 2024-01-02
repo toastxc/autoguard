@@ -39,11 +39,16 @@ pub async fn process(
 
             let server_id = &channel.server_id().unwrap();
 
+            let user = client.user_fetch(&message.author).await?;
+
             println!("creating channel");
             let ticket_channel = client
                 .channel_create(
                     server_id,
-                    &DataChannelCreate::new(format!("issue-{}", message.author)),
+                    &DataChannelCreate::new(format!(
+                        "Issue-{}-{}",
+                        user.username, user.discriminator
+                    )),
                 )
                 .await?;
 
