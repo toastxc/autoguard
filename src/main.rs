@@ -5,7 +5,6 @@ mod ticket;
 use dotenv::dotenv;
 use futures_util::StreamExt;
 
-use crate::on_message::embed_error;
 use reywen::{
     client::Client,
     reywen_http::results::DeltaError,
@@ -13,7 +12,7 @@ use reywen::{
     websocket::{data::WebSocketEvent, error::Error},
 };
 use std::collections::HashMap;
-use std::env::VarError;
+
 use std::sync::Arc;
 use std::{env, time::Duration};
 
@@ -23,11 +22,10 @@ async fn main() {
     println!("Starting process for AUTOGUARD");
     dotenv().ok();
 
-
     let token = match (env::var("BOT_TOKEN"), env::var("SELF_TOKEN")) {
         (Ok(_), Ok(_)) => None,
         (Ok(token), _) | (_, Ok(token)) => Some(token),
-        _ => None
+        _ => None,
     };
     let Some(token) = token else {
         panic!("invalid token fields in .env");

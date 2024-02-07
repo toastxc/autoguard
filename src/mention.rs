@@ -8,9 +8,9 @@ pub async fn process(
     client: &Client,
     server_id: &String,
     message: &Message,
-    convec: &[String],
+    con_vec: &[String],
 ) -> Result<(), DeltaError> {
-    if convec.get(2).map(|a| a.as_str()) != Some("everyone") {
+    if con_vec.get(2).map(|a| a.as_str()) != Some("everyone") {
         return Ok(());
     };
     // buffers - max 2000 char

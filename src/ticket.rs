@@ -168,12 +168,16 @@ pub async fn process(
             let role_name = env::var("ADMIN_ROLE_NAME").unwrap();
 
             let mut admin_role_id = String::new();
-            client.server_fetch(server_id).await?.roles.iter().for_each(|(id, name)| if name.name == role_name {
-
-
-                admin_role_id = id.clone();
-            });
-
+            client
+                .server_fetch(server_id)
+                .await?
+                .roles
+                .iter()
+                .for_each(|(id, name)| {
+                    if name.name == role_name {
+                        admin_role_id = id.clone();
+                    }
+                });
 
             if !admin_role_id.is_empty() {
                 client
@@ -188,7 +192,6 @@ pub async fn process(
                     )
                     .await?;
             }
-
 
             println!("edit message");
             client

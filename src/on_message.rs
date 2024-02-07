@@ -1,5 +1,5 @@
 use crate::{find_id, mention, roles_get, ticket, Stuff};
-use reywen::structures::channels::message::SendableEmbed;
+
 use reywen::{
     client::Client,
     reywen_http::results::DeltaError,
@@ -9,51 +9,17 @@ use std::env;
 use std::fmt::Write;
 use std::sync::Arc;
 
-pub enum EmbedColour {
-    Error,
-    Warning,
-    Success,
-}
-impl EmbedColour {
-    pub fn display(&self) -> String {
-        format!(
-            "var(--{})",
-            match self {
-                EmbedColour::Error => "error",
-                EmbedColour::Warning => "warning",
-                EmbedColour::Success => "success",
-            }
-        )
-    }
-}
-
-pub fn embed_error(text: impl Into<String>, description: Option<&str>) -> DataMessageSend {
-    let mut embed = SendableEmbed::default()
-        .set_title(text)
-        .set_colour(EmbedColour::Error.display());
-    embed.description = description.map(|a| a.to_string());
-    DataMessageSend::from_embed(embed)
-}
-
 pub async fn message_handle(client: Arc<Client>, message: Message) -> Result<(), DeltaError> {
-
     // this system will ban mass spam accounts
     let spam_protect = true;
     // make sure to change the keyword
     if message.content_contains("KEYWORD", " ").is_some() && spam_protect {
         client
-            .ban_create(
-                "SERVER_ID",
-                message.author,
-                Some(String::from("raid")),
-            )
+            .ban_create("SERVER_ID", message.author, Some(String::from("raid")))
             .await?;
         println!("banned");
         return Ok(());
     }
-
-
-
 
     let prefix = env::var("COMMAND_PREFIX").unwrap();
 
