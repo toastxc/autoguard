@@ -13,6 +13,8 @@ use reywen::{
     websocket::{data::WebSocketEvent, error::Error},
 };
 use std::collections::HashMap;
+use std::env::VarError;
+use std::sync::Arc;
 use std::{env, time::Duration};
 
 const REPLACE: [char; 3] = ['<', '>', '@'];
@@ -21,8 +23,17 @@ async fn main() {
     println!("Starting process for AUTOGUARD");
     dotenv().ok();
 
-    let token = env::var("BOT_TOKEN").unwrap();
-    let id = env::var("BOT_ID").unwrap();
+
+    let token = match (env::var("BOT_TOKEN"), env::var("SELF_TOKEN")) {
+        (Ok(_), Ok(_)) => None,
+        (Ok(token), _) | (_, Ok(token)) => Some(token),
+        _ => None
+    };
+    let Some(token) = token else {
+        panic!("invalid token fields in .env");
+    };
+
+    let id = env::var("BOT_ID").expect("system requires self ID");
 
     let client = {
         if env::var("OTHER_INSTANCE")
@@ -40,6 +51,7 @@ async fn main() {
             Client::from_token(&token, id, true).unwrap()
         }
     };
+
     println!("Created client successfully");
 
     println!("{:?}", client);
@@ -59,23 +71,14 @@ async fn main() {
 async fn ws_2(client: Client) -> Result<(), Error> {
     let (mut read, _) = client.websocket.dual_async().await?;
 
+    let client = Arc::new(client);
     while let Some(item) = read.next().await {
-        let client = client.clone();
+        let client = Arc::clone(&client);
         if let WebSocketEvent::Message { message } = item {
             tokio::spawn(async move {
-                if let Err(error) = on_message::message_handle(&client, message.clone()).await {
+                if let Err(error) = on_message::message_handle(client, message.clone()).await {
                     println!("{:?}", error);
                     tokio::time::sleep(Duration::from_secs(1)).await;
-                    client
-                        .message_send(
-                            &message.channel,
-                            &embed_error(
-                                format!("{:?}", error),
-                                Some("An error has occured, the bot could not finish its tasks"),
-                            ),
-                        )
-                        .await
-                        .unwrap();
                 }
             });
         }
@@ -98,7 +101,7 @@ pub async fn roles_get(
         .collect())
 }
 
-async fn find_id(message: &Message, convec: &[String]) -> (Stuff<String>, Option<String>) {
+async fn find_id(message: &Message, con_vec: &[String]) -> (Stuff<String>, Option<String>) {
     match (
         message.clone().replies,
         message.content.clone().unwrap().len(),
@@ -120,15 +123,15 @@ async fn find_id(message: &Message, convec: &[String]) -> (Stuff<String>, Option
             // username / id
 
             (
-                Stuff::One(convec.get(3).unwrap().replace(REPLACE, "")),
+                Stuff::One(con_vec.get(3).unwrap().replace(REPLACE, "")),
                 None,
             )
         }
 
         (None, 4) => (
             // username / id | with reason
-            Stuff::One(convec.get(3).unwrap().replace(REPLACE, "")),
-            Some(convec.get(3).unwrap().clone()),
+            Stuff::One(con_vec.get(3).unwrap().replace(REPLACE, "")),
+            Some(con_vec.get(3).unwrap().clone()),
         ),
         (None, _) => (Stuff::None, None),
     }
