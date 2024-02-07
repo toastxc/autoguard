@@ -7,6 +7,7 @@ use reywen::{
 };
 use std::env;
 use std::fmt::Write;
+use std::sync::Arc;
 
 pub enum EmbedColour {
     Error,
@@ -34,7 +35,26 @@ pub fn embed_error(text: impl Into<String>, description: Option<&str>) -> DataMe
     DataMessageSend::from_embed(embed)
 }
 
-pub async fn message_handle(client: &Client, message: Message) -> Result<(), DeltaError> {
+pub async fn message_handle(client: Arc<Client>, message: Message) -> Result<(), DeltaError> {
+
+    // this system will ban mass spam accounts
+    let spam_protect = true;
+    // make sure to change the keyword
+    if message.content_contains("KEYWORD", " ").is_some() && spam_protect {
+        client
+            .ban_create(
+                "SERVER_ID",
+                message.author,
+                Some(String::from("raid")),
+            )
+            .await?;
+        println!("banned");
+        return Ok(());
+    }
+
+
+
+
     let prefix = env::var("COMMAND_PREFIX").unwrap();
 
     // no current wordlist ban
@@ -107,7 +127,7 @@ pub async fn message_handle(client: &Client, message: Message) -> Result<(), Del
 
     // ?/ ticket
     if convec.get(1) == Some(&"ticket".to_string()) {
-        return ticket::process(client, &message, &convec, &channel).await;
+        return ticket::process(&client, &message, &convec, &channel).await;
     }
 
     let member_roles = client
@@ -115,7 +135,7 @@ pub async fn message_handle(client: &Client, message: Message) -> Result<(), Del
         .await?
         .roles;
 
-    if roles_get(&member_roles, client, server_id)
+    if roles_get(&member_roles, &client, server_id)
         .await?
         .get(&env::var("ADMIN_ROLE_NAME").unwrap())
         .is_none()
@@ -127,7 +147,7 @@ pub async fn message_handle(client: &Client, message: Message) -> Result<(), Del
     // each ping is 30 chars
 
     if let Some("mention") = convec.get(1).map(|a| a.as_str()) {
-        return mention::process(client, server_id, &message, &convec).await;
+        return mention::process(&client, server_id, &message, &convec).await;
     }
 
     // differ commands
