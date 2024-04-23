@@ -1,25 +1,25 @@
-mod mention;
-mod on_message;
-mod ticket;
+mod db;
+mod events;
+mod text;
 
+use crate::db::Db;
 use dotenv::dotenv;
 use futures_util::StreamExt;
-
 use reywen::{
     client::Client,
     reywen_http::results::DeltaError,
-    structures::{channels::message::Message, server::Role},
+    structures::server::Role,
     websocket::{data::WebSocketEvent, error::Error},
 };
 use std::collections::HashMap;
-
 use std::sync::Arc;
 use std::{env, time::Duration};
 
-const REPLACE: [char; 3] = ['<', '>', '@'];
+const REPLACE: [char; 5] = ['<', '>', '@', ' ', '\n'];
 #[tokio::main]
 async fn main() {
     println!("Starting process for AUTOGUARD");
+    println!("INIT: ENV");
     dotenv().ok();
 
     let token = match (env::var("BOT_TOKEN"), env::var("SELF_TOKEN")) {
@@ -52,13 +52,14 @@ async fn main() {
 
     println!("Created client successfully");
 
-    println!("{:?}", client);
+    println!("INIT: MONGO");
+    let db = Db::init().await;
 
     loop {
         println!("Websocket process started");
 
         let client = client.clone();
-        if let Err(error) = ws_2(client).await {
+        if let Err(error) = ws_2(client, db.clone()).await {
             println!("{:?}", error);
         };
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -66,15 +67,18 @@ async fn main() {
     }
 }
 
-async fn ws_2(client: Client) -> Result<(), Error> {
+async fn ws_2(client: Client, db: Db) -> Result<(), Error> {
     let (mut read, _) = client.websocket.dual_async().await?;
 
     let client = Arc::new(client);
     while let Some(item) = read.next().await {
+        let db = db.clone();
         let client = Arc::clone(&client);
         if let WebSocketEvent::Message { message } = item {
             tokio::spawn(async move {
-                if let Err(error) = on_message::message_handle(client, message.clone()).await {
+                if let Err(error) =
+                    events::on_message::message_handle(client, message.clone(), db).await
+                {
                     println!("{:?}", error);
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
@@ -97,46 +101,4 @@ pub async fn roles_get(
         .into_iter()
         .filter(|a| member_roles.contains(&a.0))
         .collect())
-}
-
-async fn find_id(message: &Message, con_vec: &[String]) -> (Stuff<String>, Option<String>) {
-    match (
-        message.clone().replies,
-        message.content.clone().unwrap().len(),
-    ) {
-        // reply
-        (Some(replies), _) => {
-            match replies.as_slice() {
-                [] => {
-                    unreachable!()
-                }
-                // reply to single message
-                [item] => (Stuff::One(item.clone()), None),
-                // reply to many message - delete message only
-                items => (Stuff::Many(items.to_vec()), None),
-            }
-        }
-
-        (None, 3) => {
-            // username / id
-
-            (
-                Stuff::One(con_vec.get(3).unwrap().replace(REPLACE, "")),
-                None,
-            )
-        }
-
-        (None, 4) => (
-            // username / id | with reason
-            Stuff::One(con_vec.get(3).unwrap().replace(REPLACE, "")),
-            Some(con_vec.get(3).unwrap().clone()),
-        ),
-        (None, _) => (Stuff::None, None),
-    }
-}
-
-pub enum Stuff<T> {
-    Many(Vec<T>),
-    One(T),
-    None,
 }

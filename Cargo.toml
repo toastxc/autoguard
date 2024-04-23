@@ -7,10 +7,13 @@ edition = "2021"
 
 [dependencies]
 #reywen = {version = "0.1.28", path = "../Reywen-Revolt"}
-reywen = {version = "0.1.28"}
+reywen = {version = "0.1.29"}
 tokio = { version = "1.35.1", features = ["rt-multi-thread"] }
 dotenv = "0.15.0"
 futures-util = "0.3.29"
 log = "0.4.20"
 rand = "0.8.5"
 serde_json = "1.0.109"
+anyhow = "1.0.82"
+serde = { version = "1.0.198", features = ["derive"] }
+mongodb = "2.8.2"
