@@ -1,10 +1,11 @@
 mod db;
+mod doc;
 mod events;
-mod text;
 
 use crate::db::Db;
 use dotenv::dotenv;
 use futures_util::StreamExt;
+use reywen::structures::channels::message::DataMessageSend;
 use reywen::{
     client::Client,
     reywen_http::results::DeltaError,
@@ -77,9 +78,18 @@ async fn ws_2(client: Client, db: Db) -> Result<(), Error> {
         if let WebSocketEvent::Message { message } = item {
             tokio::spawn(async move {
                 if let Err(error) =
-                    events::on_message::message_handle(client, message.clone(), db).await
+                    events::on_message::message_handle(client.clone(), message.clone(), db).await
                 {
                     println!("{:?}", error);
+                    if let DeltaError::StatusCode(a) = error {
+                        _ = client
+                            .message_send(
+                                &message.channel,
+                                &DataMessageSend::from_embed_text(format!("Error {}!", a.as_u16()))
+                                    .add_reply_str(&message.id),
+                            )
+                            .await;
+                    }
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             });

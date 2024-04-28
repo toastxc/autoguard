@@ -1,5 +1,5 @@
 use crate::db::{Db, Warning};
-use crate::text::{help, links};
+// use crate::text::{help, links};
 use crate::REPLACE;
 use rand::random;
 use reywen::structures::server::Role;
@@ -10,6 +10,7 @@ use reywen::{
 };
 use std::env;
 
+use crate::doc::{help, links};
 use std::sync::Arc;
 
 pub async fn message_handle(
@@ -53,7 +54,7 @@ pub async fn message_handle(
         return Ok(());
     };
 
-    let Some(server_id) = db.c_poll(&message.channel, &client).await.unwrap() else {
+    let Some(server_id) = db.c_alias_poll(&message.channel, &client).await.unwrap() else {
         return client
             .message_send(
                 &message.channel,
@@ -113,7 +114,7 @@ pub async fn message_handle(
                 user, reason_str
             ));
             client.message_send(&message.channel, &msg).await?;
-            db.warning_add(Warning {
+            db.warn_user(Warning {
                 _id: random::<u32>().to_string(),
                 server_id,
                 user_id: user,
@@ -155,6 +156,7 @@ async fn auth(
         .await?
         .roles
     {
+        println!("{name} {target}");
         if name == target {
             return Ok(true);
         }
