@@ -30,8 +30,10 @@ pub struct Warning {
 }
 impl Db {
     pub async fn init() -> Self {
-        dotenv::dotenv().ok();
-        let db = mongodb::Client::with_uri_str(env::var("MONGO_URI").unwrap())
+        let uri = env::var("MONGO_URI").unwrap().replace(['"', ], "");
+
+        println!("INIT: DB_URI = {uri}");
+        let db = mongodb::Client::with_uri_str(uri)
             .await
             .unwrap()
             .database("autoguard");

@@ -86,6 +86,7 @@ dependencies = [
  "futures-util",
  "log",
  "mongodb",
+ "openssl-sys",
  "rand",
  "reywen",
  "serde",

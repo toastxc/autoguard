@@ -9,17 +9,15 @@ use reywen::structures::channels::message::DataMessageSend;
 use reywen::{
     client::Client,
     reywen_http::results::DeltaError,
-    structures::server::Role,
     websocket::{data::WebSocketEvent, error::Error},
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::{env, time::Duration};
 
 const REPLACE: [char; 5] = ['<', '>', '@', ' ', '\n'];
 #[tokio::main]
 async fn main() {
-    println!("Starting process for AUTOGUARD");
+    println!("Starting process for AUTOGUARD...");
     println!("INIT: ENV");
     dotenv().ok();
 
@@ -34,30 +32,30 @@ async fn main() {
 
     let id = env::var("BOT_ID").expect("system requires self ID");
 
+    println!("TOKEN: {}", token);
+
     let client = {
         if env::var("OTHER_INSTANCE")
             .unwrap_or_default()
             .parse::<bool>()
             .unwrap_or_default()
         {
-            println!("Third party instance detected");
+            println!("INFO: Third party instance detected");
             let mut client = Client::from_token(&token, id, true).unwrap();
             client.http.url = env::var("INSTANCE_API_URI").clone().unwrap();
             client.websocket.domain = env::var("INSTANCE_WS_URI").unwrap().clone();
             client
         } else {
-            println!("Official instance detected");
+            println!("INFO: Official instance detected");
             Client::from_token(&token, id, true).unwrap()
         }
     };
+    println!("INIT: Reywen");
 
-    println!("Created client successfully");
-
-    println!("INIT: MONGO");
     let db = Db::init().await;
-
+    println!("INIT: MONGO");
     loop {
-        println!("Websocket process started");
+        println!("INIT: Websocket");
 
         let client = client.clone();
         if let Err(error) = ws_2(client, db.clone()).await {
@@ -97,18 +95,4 @@ async fn ws_2(client: Client, db: Db) -> Result<(), Error> {
     }
 
     Ok(())
-}
-
-pub async fn roles_get(
-    member_roles: &[String],
-    client: &Client,
-    server_id: &String,
-) -> Result<HashMap<String, Role>, DeltaError> {
-    Ok(client
-        .server_fetch(server_id)
-        .await?
-        .roles
-        .into_iter()
-        .filter(|a| member_roles.contains(&a.0))
-        .collect())
 }
